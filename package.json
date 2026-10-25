@@ -1,0 +1,12 @@
+{
+  "name": "twenty-four-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "廿四牌局 — a static twenty-four game workbench: guaranteed-solvable deals, exhaustive solution audit, and an unsolvable-hand generator.",
+  "scripts": {
+    "test": "node tests/engine.test.js",
+    "build:data": "node scripts/build-data.js",
+    "serve": "node scripts/serve.js"
+  },
+  "license": "MIT"
+}

@@ -82,20 +82,27 @@
    * Nodes                                                               *
    *   val      exact value                                              *
    *   key      canonical key (assoc + commut flattened)                  *
-   *   essence  identity-stripped key (for grouping stylistic variants)   *
+   *   ess      essence object: identity-stripped structure (grouping)     *
    *   tree     expression tree, used for display                         *
-   *   sum/prod flattened term/factor lists: {s: sign|inverse, e, v}      *
+   *   sum/prod flattened term/factor lists: {s, e, v, k}                  *
    * ------------------------------------------------------------------ */
   function leaf(v, label) {
     var k = 'N' + fStr(v);
-    return { val: v, key: k, essence: k, label: label, fracHit: false, tree: { kind: 'num', label: label || fStr(v), val: v } };
+    return {
+      val: v,
+      key: k,
+      ess: { str: k, add: false, mul: false, parts: null, v: v },
+      label: label,
+      fracHit: false,
+      tree: { kind: 'num', label: label || fStr(v), val: v }
+    };
   }
 
   function termsOf(node) {
-    return node.sum ? node.sum : [{ s: false, e: node.essence, v: node.val, k: node.key }];
+    return node.sum ? node.sum : [{ s: false, e: node.ess, v: node.val, k: node.key }];
   }
   function factorsOf(node) {
-    return node.prod ? node.prod : [{ s: false, e: node.essence, v: node.val, k: node.key }];
+    return node.prod ? node.prod : [{ s: false, e: node.ess, v: node.val, k: node.key }];
   }
 
   /* canonical key: pure multiset of signed terms / inverted factors */
@@ -105,47 +112,78 @@
     }).sort();
     return tag + '[' + parts.join(',') + ']';
   }
-  /* essence key: same, after dropping ×1/÷1/+0/−0 and cancelling x−x, x÷x */
-  function essenceKey(list, tag, additive) {
-    if (!additive && list.some(function (it) {
-      return isZeroF(it.v);
-    })) return 'E0';
-    var items = [];
-    var i;
-    for (i = 0; i < list.length; i++) {
-      var it = list[i];
-      if (additive ? isZeroF(it.v) : isOneF(it.v)) continue; // +0 / ×1 vanish
-      items.push(it);
+
+  /* ------------------------------------------------------------------ *
+   * Essence: the same normalisation, plus the identity laws              *
+   *   x+0 = x−0 = x        x×1 = x÷1 = x        x−x = 0        x÷x = 1     *
+   * Nested chains of the same kind are spliced, so                        *
+   *   10÷1+2+12   ≡   10+1×(2+12)   ≡   (12+2+10)÷1                       *
+   * collapse to one idea. Atoms of the *other* kind stay opaque.          *
+   * ------------------------------------------------------------------ */
+  function essAtom(str, v) {
+    return { str: str, add: false, mul: false, parts: null, v: v };
+  }
+  function essSerialize(add, parts) {
+    var body = parts.map(function (p) {
+      return (p.s ? '-' : '+') + p.e.str;
+    }).sort();
+    return (add ? '+(' : '*(') + body.join(',') + ')';
+  }
+  function essNorm(add, parts, value) {
+    var kept = [];
+    var i, p;
+    if (!add && parts.some(function (x) {
+      return isZeroF(x.v);
+    })) return essAtom('N0', F0); // anything × 0
+
+    for (i = 0; i < parts.length; i++) {
+      p = parts[i];
+      if (add ? isZeroF(p.v) : isOneF(p.v)) continue; // +0 / ×1 / ÷1 vanish
+      kept.push(p);
     }
-    var keep = [];
-    var pool = new Map(); // value-string -> list of kept indices
-    for (i = 0; i < items.length; i++) {
-      var cur = items[i];
-      var vk = fStr(cur.v);
+    // cancel opposite partners of equal value: +x/−x, ×x/÷x
+    var live = [];
+    var pool = new Map();
+    for (i = 0; i < kept.length; i++) {
+      p = kept[i];
+      var vk = fStr(p.v);
       var bucket = pool.get(vk) || [];
       var mate = -1;
-      for (var p = 0; p < bucket.length; p++) if (keep[bucket[p]].s !== cur.s) {
-        mate = bucket[p];
+      for (var q = 0; q < bucket.length; q++) if (live[bucket[q]].s !== p.s) {
+        mate = bucket[q];
         break;
       }
       if (mate >= 0) {
-        keep[mate] = null;
+        live[mate] = null;
         bucket.splice(bucket.indexOf(mate), 1);
         pool.set(vk, bucket);
       } else {
-        keep.push(cur);
-        bucket.push(keep.length - 1);
+        live.push(p);
+        bucket.push(live.length - 1);
         pool.set(vk, bucket);
       }
     }
-    var live = [];
-    for (i = 0; i < keep.length; i++) if (keep[i]) live.push(keep[i]);
-    if (!live.length) return additive ? 'E0' : 'E1';
-    if (live.length === 1 && !live[0].s) return live[0].e;
-    var parts = live.map(function (x) {
-      return (x.s ? '-' : '+') + x.e;
-    }).sort();
-    return tag + '(' + parts.join(',') + ')';
+    var out = [];
+    for (i = 0; i < live.length; i++) if (live[i]) out.push(live[i]);
+
+    if (!out.length) return add ? essAtom('N0', F0) : essAtom('N1', F1);
+    if (out.length === 1 && !out[0].s) return out[0].e; // propagate the child structure
+    return { str: essSerialize(add, out), add: add, mul: !add, parts: out, v: value };
+  }
+  /* splice a child essence into a parent chain, but only when the kinds
+     match: a sum may absorb a sum (sign flips on −), a product may absorb a
+     product (inverts on ÷). A product child inside a sum stays opaque,
+     because 5 − (1÷5) is 5 + (−1/5), never 5 + 5. */
+  function spliceInto(into, child, flip, additive) {
+    var sameKind = additive ? child.add : child.mul;
+    if (sameKind && child.parts) {
+      for (var i = 0; i < child.parts.length; i++) {
+        var p = child.parts[i];
+        into.push({ s: flip ? !p.s : p.s, e: p.e, v: p.v });
+      }
+    } else {
+      into.push({ s: !!flip, e: child, v: child.v });
+    }
   }
 
   function combine(left, right, op) {
@@ -164,32 +202,43 @@
     };
     var flip = op === '-' || op === '/';
     var additive = op === '+' || op === '-';
+
+    /* structural key (identity-preserving): flattens assoc + commut only */
     var own = additive ? termsOf(left) : factorsOf(left);
     var other = additive ? termsOf(right) : factorsOf(right);
     var list = own.slice();
     for (var i = 0; i < other.length; i++) {
       list.push({ s: flip ? !other[i].s : other[i].s, e: other[i].e, v: other[i].v, k: other[i].k });
     }
-    var tag = additive ? 'S' : 'P';
     node[additive ? 'sum' : 'prod'] = list;
-    node.key = canonKey(list, tag);
-    node.essence = essenceKey(list, additive ? 'E+' : 'E*', additive);
+    node.key = canonKey(list, additive ? 'S' : 'P');
+
+    /* essence (identity-folding): splice same-kind chains, drop ×1/+0, cancel */
+    var parts = [];
+    spliceInto(parts, left.ess, false, additive);
+    spliceInto(parts, right.ess, flip, additive);
+    node.ess = essNorm(additive, parts, v);
     return node;
   }
 
   /* ------------------------------------------------------------------ *
    * Pretty printing with minimal parentheses                            *
+   *   left child  needs parens when it binds looser than the parent      *
+   *   right child needs parens when it binds looser *or equally* and the  *
+   *   parent is − or ÷ (those are not associative on the right):          *
+   *     a−(b+c) ✓ parens   a+(b−c) ✗ parens   a÷(b×c) ✓   a×(b÷c) ✗       *
    * ------------------------------------------------------------------ */
   var PREC = { '*': 2, '/': 2, '+': 1, '-': 1 };
   function precOf(node) {
     return node.kind === 'num' ? 3 : PREC[node.op];
   }
-  function render(node, parentPrec, isRight) {
+  function render(node, parentPrec, isRight, parentOp) {
     if (node.kind === 'num') return node.label;
     var p = precOf(node);
-    var need = p < parentPrec || (isRight && p === parentPrec && (node.op === '-' || node.op === '/'));
+    var need = p < parentPrec ||
+      (isRight && p === parentPrec && (parentOp === '-' || parentOp === '/'));
     var sym = node.op === '*' ? '×' : node.op === '/' ? '÷' : node.op;
-    var out = render(node.l, p, false) + sym + render(node.r, p, true);
+    var out = render(node.l, p, false, node.op) + sym + render(node.r, p, true, node.op);
     return need ? '(' + out + ')' : out;
   }
 
@@ -210,7 +259,7 @@
           if (!found.has(n.key)) {
             found.set(n.key, {
               key: n.key,
-              essence: n.essence,
+              essence: n.ess.str, // string form: stable Map key
               display: render(n.tree, 0, false) + ' = ' + target,
               length: render(n.tree, 0, false).length,
               fractionUsed: n.fracHit
@@ -327,6 +376,20 @@
   function cmpAbs(a, b) {
     var l = a.n * b.d, r = b.n * a.d;
     return l < r ? -1 : l > r ? 1 : 0;
+  }
+
+  /**
+   * Size of the search space the solver walks: at each reduction step pick an
+   * unordered pair of nodes and one of six ordered operator applications
+   * (+, ×, − in both directions, ÷ in both directions). For four cards this is
+   * (6·6) × (3·6) × (1·6) = 3888 candidate derivations.
+   */
+  function countPaths(count) {
+    var total = 1;
+    for (var len = (count || 4); len > 1; len--) {
+      total *= (len * (len - 1) / 2) * 6;
+    }
+    return total;
   }
 
   /* ------------------------------------------------------------------ *
@@ -545,12 +608,16 @@
     var usageError = null;
     if (surplus) usageError = '用掉了手里没有的数字';
     else if (leftover) usageError = '还有 ' + leftover + ' 张牌没用上';
+    var signedGap = fSub(node.val, frac(BigInt(target)));
+    var absGap = signedGap.n < 0n ? { n: -signedGap.n, d: signedGap.d } : signedGap;
 
     return {
       ok: true,
       value: node.val,
       valueText: fStr(node.val),
       hit: fEq(node.val, frac(BigInt(target))) && !surplus && !leftover,
+      gapText: fStr(absGap),
+      gapBelow: signedGap.n < 0n,
       numbersUsed: numbers,
       missing: leftover,
       surplus: surplus,
@@ -570,6 +637,7 @@
     hasSolution: hasSolution,
     isUnsolvable: isUnsolvable,
     bestApprox: bestApprox,
+    countPaths: countPaths,
     makeRng: makeRng,
     randomHand: randomHand,
     dealSolvable: dealSolvable,

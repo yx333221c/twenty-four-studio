@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="felt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>廿四牌局 · Twenty-Four Studio</title>
+<meta name="description" content="24 点一站式工作台：随机发牌挑战、穷举校验全部解法、生成无解死局牌库。">
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🂡</text></svg>">
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+
+<header class="masthead">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">24</span>
+    <div>
+      <h1>廿四牌局</h1>
+      <p class="tagline">Exact-rational twenty-four workbench · 分数级精确运算，不漏一种解法</p>
+    </div>
+  </div>
+  <div class="masthead-tools">
+    <label class="field-inline">
+      <span>发牌牌面</span>
+      <select id="range-select" aria-label="发牌牌面范围">
+        <option value="1-13">扑克 A–K</option>
+        <option value="1-9">数字 1–9</option>
+      </select>
+    </label>
+    <button id="theme-toggle" class="icon-btn" type="button" aria-label="切换桌面配色">🂠</button>
+  </div>
+</header>
+
+<nav class="rail" role="tablist" aria-label="功能切换">
+  <button class="rail-tab is-active" role="tab" aria-selected="true" aria-controls="panel-arena" data-panel="arena">
+    <span class="rail-num">I</span><span>牌局擂台</span>
+  </button>
+  <button class="rail-tab" role="tab" aria-selected="false" aria-controls="panel-audit" data-panel="audit">
+    <span class="rail-num">II</span><span>解法审计</span>
+  </button>
+  <button class="rail-tab" role="tab" aria-selected="false" aria-controls="panel-deck" data-panel="deck">
+    <span class="rail-num">III</span><span>死局牌库</span>
+  </button>
+</nav>
+
+<main>
+  <!-- ══════════════ I · 牌局擂台 ══════════════ -->
+  <section id="panel-arena" class="panel is-active" role="tabpanel" aria-label="牌局擂台">
+    <div class="panel-head">
+      <h2>牌局擂台</h2>
+      <p>系统保证发到手的一手牌一定打得通。用四张牌、加减乘除和括号凑出目标数。</p>
+    </div>
+
+    <div class="arena-grid">
+      <div class="table-zone">
+        <div class="table-crown">
+          <span class="hand-id" id="hand-id">局号 —</span>
+          <span class="chip chip-target">目标 <b id="target-chip">24</b></span>
+          <span class="chip" id="idea-count-chip" hidden>共 <b></b> 种思路</span>
+        </div>
+
+        <div class="card-felt" id="card-felt" aria-label="四张手牌，点击出牌"></div>
+
+        <div class="slate">
+          <div class="slate-expr" id="expr-view" aria-live="polite">
+            <span class="placeholder">点击上面的牌开始拼装算式</span>
+          </div>
+          <div class="slate-meter">
+            <span class="meter-item">已用牌 <b id="cards-used">0</b>/4</span>
+            <span class="meter-item">当前值 <b id="live-value">—</b></span>
+            <span class="meter-flag" id="live-flag"></span>
+          </div>
+        </div>
+
+        <div class="keypad" aria-label="运算符键盘">
+          <button class="key" data-key="(">(</button>
+          <button class="key" data-key=")">)</button>
+          <button class="key key-op" data-key="+">＋</button>
+          <button class="key key-op" data-key="-">－</button>
+          <button class="key key-op" data-key="*">×</button>
+          <button class="key key-op" data-key="/">÷</button>
+          <button class="key key-warn" data-key="back">⌫</button>
+          <button class="key key-warn" data-key="clear">清空</button>
+        </div>
+
+        <div class="actionbar">
+          <button class="btn btn-primary" id="btn-reveal" type="button">揭晓打法</button>
+          <button class="btn" id="btn-replay" type="button">重摆牌面</button>
+          <button class="btn" id="btn-deal" type="button">另开一局</button>
+        </div>
+      </div>
+
+      <aside class="arena-side">
+        <div class="side-block">
+          <h3>难度档位</h3>
+          <div class="segment" role="group" aria-label="难度档位" id="flavour-group">
+            <button class="seg is-active" data-flavour="easy" type="button" aria-pressed="true">热身</button>
+            <button class="seg" data-flavour="normal" type="button" aria-pressed="false">常规</button>
+            <button class="seg" data-flavour="hard" type="button" aria-pressed="false">刁钻</button>
+          </div>
+          <p class="side-note" id="flavour-note">思路多、不需要分数中间值。</p>
+        </div>
+
+        <div class="side-block">
+          <h3>战况</h3>
+          <dl class="stat-grid">
+            <div><dt>本局用时</dt><dd id="cur-time">0:00</dd></div>
+            <div><dt>连胜</dt><dd id="st-cur">0</dd></div>
+            <div><dt>最高连胜</dt><dd id="st-best">0</dd></div>
+            <div><dt>通关 / 对局</dt><dd id="st-rate">0 / 0</dd></div>
+            <div><dt>最快通关</dt><dd id="st-fastest">—</dd></div>
+            <div><dt>看过打法</dt><dd id="st-hints">0</dd></div>
+          </dl>
+          <button class="link-btn" id="btn-reset-stats" type="button">清空战绩</button>
+        </div>
+
+        <div class="side-block verdict-block">
+          <h3>判定</h3>
+          <div id="arena-verdict" class="verdict" aria-live="polite">尚未分出结果。</div>
+        </div>
+      </aside>
+    </div>
+
+    <div class="reveal-wrap" id="reveal-wrap" hidden>
+      <div class="reveal-head">
+        <h3>本局全部打法</h3>
+        <p>同一种思路的不同书写方式收在展开条里，四张牌都不会少用。</p>
+        <button class="btn btn-ghost btn-sm" id="btn-copy-reveal" type="button">复制清单</button>
+      </div>
+      <ol class="idea-list" id="idea-list"></ol>
+    </div>
+  </section>
+
+  <!-- ══════════════ II · 解法审计 ══════════════ -->
+  <section id="panel-audit" class="panel" role="tabpanel" aria-label="解法审计" hidden>
+    <div class="panel-head">
+      <h2>解法审计</h2>
+      <p>给出四个数，穷举所有配对顺序与运算组合，并折叠掉结合律、交换律与 ×1、+0 之类的书写变体。</p>
+    </div>
+
+    <form class="audit-form" id="audit-form">
+      <div class="slots" id="audit-slots"></div>
+      <label class="field-inline field-target">
+        <span>目标数</span>
+        <input type="number" id="audit-target" value="24" min="1" max="999" step="1" inputmode="numeric">
+      </label>
+      <div class="audit-actions">
+        <button class="btn btn-primary" type="submit">展开全解</button>
+        <button class="btn" type="button" id="audit-fill-live">抽一手有解</button>
+        <button class="btn" type="button" id="audit-fill-dead">抽一手死局</button>
+        <button class="btn btn-ghost" type="button" id="audit-clear">重置输入</button>
+      </div>
+    </form>
+
+    <div class="audit-report" id="audit-report" aria-live="polite">
+      <p class="muted">等待输入。</p>
+    </div>
+  </section>
+
+  <!-- ══════════════ III · 死局牌库 ══════════════ -->
+  <section id="panel-deck" class="panel" role="tabpanel" aria-label="死局牌库" hidden>
+    <div class="panel-head">
+      <h2>死局牌库</h2>
+      <p>专门制造怎么算都到不了目标数的牌组，附最接近值，用来做反套路训练或出题防作弊。</p>
+    </div>
+
+    <div class="deck-controls">
+      <div class="segment" role="group" aria-label="生成张数" id="batch-group">
+        <button class="seg" data-batch="1" type="button" aria-pressed="false">1 组</button>
+        <button class="seg is-active" data-batch="5" type="button" aria-pressed="true">5 组</button>
+        <button class="seg" data-batch="10" type="button" aria-pressed="false">10 组</button>
+        <button class="seg" data-batch="20" type="button" aria-pressed="false">20 组</button>
+      </div>
+      <div class="deck-actions">
+        <button class="btn btn-primary" id="btn-mint" type="button">铸一批死局</button>
+        <button class="btn" id="btn-copy-deck" type="button">复制牌组</button>
+      </div>
+    </div>
+
+    <div class="deck-grid" id="deck-grid"></div>
+
+    <div class="landscape">
+      <h3>牌库全景</h3>
+      <div class="land-grid" id="land-grid"></div>
+      <div class="nearby">
+        <h4>只差一点的死局</h4>
+        <div class="near-list" id="near-list"></div>
+        <p class="side-note">这些牌组与目标数仅差 1 或 2，最容易在牌桌上骗到人。</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footnote">
+  <span>算法：BigInt 分数精确求解 · 穷举全部配对与运算顺序 · 双层去重（结构等价 + 恒等变形）</span>
+  <span id="foot-seed"></span>
+</footer>
+
+<noscript>
+  <p style="padding:2rem;text-align:center">此工作台需要 JavaScript 才能求解 24 点。</p>
+</noscript>
+
+<script src="js/engine.js"></script>
+<script src="js/data.js"></script>
+<script src="js/ui.js"></script>
+</body>
+</html>

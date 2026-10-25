@@ -14,7 +14,7 @@ function ok(name, cond, detail) {
    '/' only appears inside a "a/b" result label on the right-hand side. */
 function evalDisplay(str) {
   const [exprRaw, rhs] = str.split('=');
-  const src = exprRaw.replace(/×/g, '*').replace(/÷/g, '/').replace(/\s+/g, '');
+  const src = exprRaw.replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-').replace(/\s+/g, '');
   let i = 0;
   const expr = () => { let v = term(); while (src[i] === '+' || src[i] === '-') { const o = src[i++]; const r = term(); v = o === '+' ? v + r : v - r; } return v; };
   const term = () => { let v = factor(); while (src[i] === '*' || src[i] === '/') { const o = src[i++]; const r = factor(); v = o === '*' ? v * r : v / r; } return v; };
@@ -58,6 +58,68 @@ for (const h of hard) {
   ok(h + ' is solvable', r.total > 0, 'ideas=' + r.total + ' raw=' + r.rawTotal);
   const bad = verifyAll(h, r);
   ok(h + ' → all ' + allDisplays(r).length + ' renders verify & use exactly the 4 cards', bad.length === 0, bad[0]);
+}
+
+console.log('\n=== exhaustive render verification: every printed formula re-evaluates ===');
+let renderChecked = 0, renderBad = [];
+for (let a = 1; a <= 13; a++)
+  for (let b = a; b <= 13; b++)
+    for (let c = b; c <= 13; c++)
+      for (let d = c; d <= 13; d++) {
+        const h = [a, b, c, d];
+        const r = E.solve(h);
+        for (const disp of allDisplays(r)) {
+          renderChecked++;
+          try {
+            evalDisplay(disp);
+            const used = numsIn(disp).join();
+            if (used !== [...h].sort((x, y) => x - y).join()) renderBad.push('cards: ' + disp);
+          } catch (e) {
+            renderBad.push(e.message);
+            if (renderBad.length > 4) break;
+          }
+        }
+        if (renderBad.length > 4) break;
+      }
+ok('all ' + renderChecked + ' printed formulas are arithmetically true and use exactly the 4 cards',
+  renderBad.length === 0, renderBad.slice(0, 3).join(' | '));
+
+console.log('\n=== parentheses: non-associative right children must stay wrapped ===');
+// regression: 6,7,8,10 → tree 6×7 − (8+10); dropping those parens prints 42−8+10 = 44
+{
+  const r = E.solve([6, 7, 8, 10]);
+  const bad = verifyAll([6, 7, 8, 10], r);
+  ok('6,7,8,10 formulas all true', bad.length === 0, bad[0]);
+  ok('a−(b+c) keeps its parentheses', r.solutions.some(s => /-\(.+\+.+\)/.test(s.display)) ||
+    !r.solutions.some(s => /[^()]\d+-\d+\+\d+ = 24$/.test(s.display.replace(/\s/g, ''))),
+    r.solutions.map(s => s.display).join(' | '));
+}
+{
+  const r = E.solve([2, 3, 4, 5]);
+  ok('2,3,4,5 formulas all true', verifyAll([2, 3, 4, 5], r).length === 0, verifyAll([2, 3, 4, 5], r)[0]);
+}
+
+console.log('\n=== nested-chain splicing (essence absorbs same-kind children) ===');
+{
+  // 1,2,10,12: fourteen raw forms, all of them "add the three, ×1/÷1 somewhere"
+  const r = E.solve([1, 2, 10, 12]);
+  ok('1,2,10,12 collapses 14 raw forms to 1 idea', r.rawTotal === 14 && r.total === 1,
+    'raw=' + r.rawTotal + ' ideas=' + r.total);
+  ok('the surviving idea still prints all four cards', numsIn(r.solutions[0].display).length === 4,
+    r.solutions[0].display);
+  // 3×4÷(1÷2) is 1×2×3×4 wearing a hat: product inside product must splice
+  const r2 = E.solve([1, 2, 3, 4]);
+  ok('1,2,3,4 → 3 ideas from 4 raw forms (÷(1÷2) merges into ×1×2×3×4)',
+    r2.rawTotal === 4 && r2.total === 3, 'raw=' + r2.rawTotal + ' ideas=' + r2.total);
+  // a product child of a sum must NOT splice: 5-(1÷5) keeps its shape
+  const r3 = E.solve([1, 5, 5, 5]);
+  ok('5,5,5,1 stays one idea and keeps the fraction structure',
+    r3.total === 1 && /\(5-1÷5\)/.test(r3.solutions[0].display), r3.solutions[0].display);
+  // over-fold guard: genuinely different ideas must not merge
+  const r4 = E.solve([2, 3, 6, 12]);
+  ok('densest hand keeps many distinct ideas (no over-folding)', r4.total >= 8, 'ideas=' + r4.total);
+  ok('every idea of 2,3,6,12 verifies', verifyAll([2, 3, 6, 12], r4).length === 0,
+    verifyAll([2, 3, 6, 12], r4)[0]);
 }
 
 console.log('\n=== reference solution counts (published 24-game tables) ===');
