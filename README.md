@@ -8,7 +8,8 @@
 | **Ⅱ 解法审计** | 输入四个数（和目标数），列出**所有**算到目标的思路，并可展开未折叠的原始算式 |
 | **Ⅲ 死局牌库** | 批量生成**怎么算都无解**的牌组，附「最接近值」证明与牌库全景统计 |
 
-在线地址（push 后由 GitHub Actions 自动部署）：<https://yx333221c.github.io/twenty-four-studio/>
+在线地址：<https://yx333221c.github.io/twenty-four-studio/>
+（GitHub Pages 以分支直发模式部署，push 到 `main` 即自动上线。）
 
 ## 直接用
 
@@ -41,6 +42,19 @@ npm run build:data   # 重新生成 js/data.js（牌库全景的预计算结果�
 ## 分享题目
 
 解法审计里点「复制题目链接」，得到形如 `?audit=1,5,5,5&target=24` 的地址，对方打开即直达该结果。
+
+## 部署
+
+当前用 Pages 的**分支直发**模式：push 到 `main` 即上线，无需构建。
+
+仓库里另备了一份带 CI 门禁的工作流 `scripts/pages-deploy.yml.txt`——它会先跑 `npm test`（1820 种牌组穷举验证）再部署，测试不过就不发。想启用它需要两步：
+
+```bash
+gh auth refresh -s workflow          # 当前 token 缺 workflow 权限，无法直接提交 .github/workflows/*
+git mv scripts/pages-deploy.yml.txt .github/workflows/deploy.yml
+git commit -m "ci: gate Pages deploys behind the solver test suite" && git push
+gh api repos/:owner/:repo/pages -X PATCH -f build_type=github_actions
+```
 
 ## 数据与统计
 
